@@ -1,4 +1,7 @@
 
+using Microsoft.EntityFrameworkCore;
+using WebAPIExercises.Data;
+
 namespace WebAPIExercises
 {
     public class Program
@@ -14,6 +17,9 @@ namespace WebAPIExercises
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
+            builder.Services.AddDbContext<RetailDbContext>(options =>
+                options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
@@ -26,7 +32,12 @@ namespace WebAPIExercises
             app.UseHttpsRedirection();
 
             app.UseAuthorization();
-
+            app.UseCors(builder =>
+            {
+                builder.WithOrigins("http://localhost:4200")
+                       .AllowAnyHeader()
+                       .AllowAnyMethod();
+            });
 
             app.MapControllers();
 

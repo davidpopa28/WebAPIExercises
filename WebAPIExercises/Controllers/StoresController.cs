@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.StaticFiles;
+using WebAPIExercises.Data;
+using WebAPIExercises.DTO;
 using WebAPIExercises.Models;
 
 namespace WebAPIExercises.Controllers
@@ -8,165 +10,141 @@ namespace WebAPIExercises.Controllers
     [ApiController]
     public class StoresController : ControllerBase
     {
-        public static readonly List<Store> _stores = new()
+        RetailDbContext _context;
+        public StoresController(RetailDbContext retailDbContext)
         {
-            new Store
-            {
-                Id=Guid.NewGuid(),
-                Name="gucci",
-                City="micy",
-                Country = "Bro",
-                MonthlyIncome= 2,
-                OwnerName= "OwnerName1",
-                ActiveSince= DateTime.UtcNow
-            },
-
-            new Store
-            {
-                Id=Guid.NewGuid(),
-                Name="mucci",
-                City="vicy",
-                Country = "Chad",
-                MonthlyIncome= 3,
-                OwnerName= "OwnerName2",
-                ActiveSince= DateTime.UtcNow
-            }
-        };
-
+            _context = retailDbContext;
+        }
         [HttpGet]
-        public List<Store> GetAllStores()
+        public IEnumerable<Store> GetAllStores()
         {
-            return _stores;
+            return _context.Stores.ToList();
         }
         [HttpGet("StoresByMonthlyIncome")]
         public List<Store> GetStoresByMonthlyIncome()
         {
-            //cu linq
-            //return _stores.OrderByDescending(s => s.MonthlyIncome).ToList();
-            List<Store> stores = new List<Store>(_stores);
-            for (int i = 0; i < stores.Count - 1; i++)
-            {
-                for (int j = 0; j < stores.Count - i - 1; j++)
-                {
-                    if (stores[j].MonthlyIncome < stores[j + 1].MonthlyIncome)
-                    {
-                        (stores[j], stores[j + 1]) = (stores[j + 1], stores[j]);
-                    }
-                }
-            }
-            return stores;
+            return _context.Stores.OrderByDescending(s => s.MonthlyIncome).ToList();
         }
         [HttpGet("OldestStore")]
         public Store GetTheOldestStore()
         {
-            //cu linq
-            //return _stores.OrderByDescending(s => s.ActiveSince).ToList()[0];
-            List<Store> stores = new List<Store>(_stores);
-            for (int i = 0; i < stores.Count - 1; i++)
-            {
-                for (int j = 0; j < stores.Count - i - 1; j++)
-                {
-                    if (stores[j].ActiveSince > stores[j + 1].ActiveSince)
-                    {
-                        (stores[j], stores[j + 1]) = (stores[j + 1], stores[j]);
-                    }
-                }
-            }
-            return stores[stores.Count - 1];
-
+            return _context.Stores.OrderByDescending(s => s.ActiveSince).ToList()[0];
         }
 
 
         [HttpGet("StoresByKeyword/{keyword}")]
         public List<Store> GetStoresByKeyword(string keyword)
         {
-            List<Store> stores = new();
-            foreach (Store store in _stores)
-            {
-                if(store.OwnerName.Contains(keyword))
-                {
-                    stores.Add(store);
-                }
-                else if(store.Name.Contains(keyword))
-                {
-                    stores.Add(store);
-                }
-            }
-            return stores;
+             var stores = _context.Stores.Where(s => s.Name.Contains(keyword) || s.City.Contains(keyword) ||
+                    s.Country.Contains(keyword) || s.ActiveSince.ToString().Contains(keyword)).ToList();
+            List<Store> storeDTO = new List<Store>(stores);
+            return storeDTO;
         }
 
         [HttpGet("StoresByCountry/{country}")]
         public List<Store> GetStoresByCountry(string country)
         {
-            List<Store> stores = new();
-            foreach (Store store in _stores)
-            {
-                if (store.Country == country)
-                {
-                    stores.Add(store);
-                }
-            }
-            return stores;
+            return _context.Stores.Where(s => s.Country == country).ToList();
         }
         [HttpGet("StoresByCity/{city}")]
         public List<Store> GetStoresByCity(string city)
         {
-            List<Store> stores = new();
-            foreach (Store store in _stores)
-            {
-                if (store.City == city)
-                {
-                    stores.Add(store);
-                }
-            }
-            return stores;
+            return _context.Stores.Where(s => s.City == city).ToList();
         }
         [HttpPost]
-        public IActionResult CreateStore([FromBody]Store store)
+        public IActionResult CreateStore([FromBody]StoreDTO storeDTO)
         {
-            if(store== null)
+            if(storeDTO== null)
             {
                 return BadRequest("Store is null");
             }
 
-            foreach (var existingStore in _stores)
+            foreach (var existingStore in _context.Stores)
             {
-                if(store.Id == existingStore.Id)
+                if(storeDTO.Id == existingStore.Id)
                 {
                     return BadRequest();
                 }
             }
+            Store store = new Store
+            {
+                Id = Guid.NewGuid(),
+                Name = storeDTO.Name,
+                City = storeDTO.City,
+                Country = storeDTO.Country,
+                OwnerName = storeDTO.OwnerName,
+                MonthlyIncome = storeDTO.MonthlyIncome,
+                ActiveSince = DateTime.Now,
+            };
 
-            _stores.Add(store);
-            return Ok(store);
+            _context.Stores.Add(store);
+            _context.SaveChanges();
+            return Ok();
         }
 
         [HttpDelete("{id}")]
         public IActionResult DeleteStore(Guid id)
         {
-            foreach (var existingStore in _stores)
+            try
             {
-                if(existingStore.Id== id)
+                var store = _context.Stores.FirstOrDefault(p => p.Id == id);
+                if (store == null) 
                 {
-                    _stores.Remove(existingStore);
-                    return Ok();
+                    return BadRequest();
                 }
+                _context.Remove(store);
+                _context.SaveChanges();
+                return Ok("deleted");
             }
-            return NotFound();
+            catch
+            {
+                return BadRequest();
+            }
         }
 
-        [HttpPut("transfer-ownership/{storeid}")]
-        public IActionResult UpdateStore(Guid storeid, [FromBody] string name)
+        [HttpPut("{storeid}")]
+        public IActionResult UpdateStore(Guid storeid, [FromBody] StoreDTO storeDTO)
         {
-            foreach (var existingStore in _stores)
+            try
             {
-                if (existingStore.Id == storeid)
+                var store = _context.Stores.FirstOrDefault(p => p.Id ==  storeid);
+                if(store == null)
                 {
-                    existingStore.OwnerName = name;
-                    return Ok();
+                    return BadRequest();
                 }
+                store.Name = storeDTO.Name;
+                store.OwnerName = storeDTO.OwnerName;
+                store.City = storeDTO.City;
+                store.Country = storeDTO.Country;
+                store.MonthlyIncome = storeDTO.MonthlyIncome;
+                _context.Stores.Update(store);
+                _context.SaveChanges();
+                return Ok();
             }
-            return NotFound();
+            catch
+            {
+                return BadRequest();
+            }
+        }
+        [HttpPut("transferOwnership/{storeId}")]
+        public IActionResult TransferOwnership(Guid storeId, [FromBody] string newOwnerName)
+        {
+            try
+            {
+                var store = _context.Stores.FirstOrDefault(s => s.Id == storeId);
+                if(store == null)
+                {
+                    return BadRequest("StoreId not found");
+                }
+                store.OwnerName = newOwnerName;
+                _context.Stores.Update(store);
+                _context.SaveChanges();
+                return Ok();
+            }
+            catch
+            {
+                return BadRequest();
+            }
         }
     }
 }
